@@ -1,0 +1,146 @@
+# ---------------------------------------------------------------------------
+# REUSABLE WORKFLOW: back-ci.yml
+# Lives in: template repo → .github/workflows/back-ci.yml
+# Consumed via: uses: sepehrrezaei/azure-pipelines-yaml-hackathon-sprinkle-ai/.github/workflows/back-ci.yml@master
+#
+# Centralised CI for Node.js backend / API apps. Consuming projects pass
+# their config as inputs — the build/lint/test logic lives here.
+# Update this file once → all consuming repos get the change.
+# ---------------------------------------------------------------------------
+
+name: Backend CI (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version to use'
+        type: string
+        default: '20.x'
+
+      product-code:
+        description: 'Input the product code'
+        type: string
+        default: 'unknown-product'
+
+      working-directory:
+        description: 'Working directory for the monorepo root'
+        type: string
+        default: '.'
+
+      cache-dependency-path:
+        description: 'Path to package-lock.json for caching'
+        type: string
+        default: 'package-lock.json'
+
+      lint-workspace:
+        description: 'Workspace name to lint (e.g. "backend")'
+        type: string
+        default: 'backend'
+
+      build-command:
+        description: 'Build command'
+        type: string
+        default: 'npm run build'
+
+      run-tests:
+        description: 'Run backend unit tests'
+        type: boolean
+        default: false
+
+      test-command:
+        description: 'Unit test command (only used when run-tests is true)'
+        type: string
+        default: 'npm test --workspace=backend'
+
+      run-api-tests:
+        description: 'Run backend API smoke tests'
+        type: boolean
+        default: false
+
+      api-start-command:
+        description: 'Command to start the API server'
+        type: string
+        default: 'npm run start'
+
+      api-port:
+        description: 'Port the API server listens on'
+        type: string
+        default: '3000'
+
+      api-endpoints:
+        description: 'Space-separated endpoint paths to test (e.g. "/health /api/status")'
+        type: string
+        default: '/health'
+
+      backend-paths:
+        description: 'Newline-separated paths to include in backend artifact'
+        type: string
+        default: ''
+
+jobs:
+  backend-build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+          cache-dependency-path: ${{ inputs.cache-dependency-path }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Lint ─────────────────────────────────────────────────────
+      - name: Lint backend
+        if: inputs.lint-workspace != ''
+        run: |
+          echo "::group::Lint ${{ inputs.lint-workspace }}"
+          npm run lint --workspace="${{ inputs.lint-workspace }}"
+          echo "::endgroup::"
+
+      # ── Build ────────────────────────────────────────────────────
+      - name: Build backend
+        run: ${{ inputs.build-command }}
+
+      # ── Unit Tests ───────────────────────────────────────────────
+      - name: Run backend tests
+        if: inputs.run-tests
+        run: ${{ inputs.test-command }}
+
+      # ── API Smoke Tests ──────────────────────────────────────────
+      - name: Smoke-test API endpoints
+        if: inputs.run-api-tests
+        run: |
+          ${{ inputs.api-start-command }} &
+          SERVER_PID=$!
+          sleep 3
+          FAILED=0
+          for ep in ${{ inputs.api-endpoints }}; do
+            echo "Testing http://localhost:${{ inputs.api-port }}${ep} ..."
+            curl -sf "http://localhost:${{ inputs.api-port }}${ep}" || FAILED=1
+          done
+          kill $SERVER_PID 2>/dev/null || true
+          if [ $FAILED -ne 0 ]; then
+            echo "::error::Endpoint smoke tests failed"
+            exit 1
+          fi
+          echo "✅ All endpoints responding"
+
+      # ── Upload Artifact ──────────────────────────────────────────
+      - name: Upload backend artifact
+        if: inputs.backend-paths != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-app-${{ inputs.product-code }}
+          path: ${{ inputs.backend-paths }}
+          retention-days: 7

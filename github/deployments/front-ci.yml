@@ -1,0 +1,106 @@
+# ---------------------------------------------------------------------------
+# REUSABLE WORKFLOW: front-ci.yml
+# Lives in: template repo → .github/workflows/front-ci.yml
+# Consumed via: uses: sepehrrezaei/azure-pipelines-yaml-hackathon-sprinkle-ai/.github/workflows/front-ci.yml@master
+#
+# Centralised CI for Node.js frontend apps. Consuming projects pass their
+# config as inputs — the build/lint logic lives here.
+# Update this file once → all consuming repos get the change.
+# ---------------------------------------------------------------------------
+
+name: Frontend CI (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version to use'
+        type: string
+        default: '20.x'
+
+      product-code:
+        description: 'Input the product code'
+        type: string
+        default: 'unknown-product'
+
+      working-directory:
+        description: 'Working directory for the monorepo root'
+        type: string
+        default: '.'
+
+      cache-dependency-path:
+        description: 'Path to package-lock.json for caching'
+        type: string
+        default: 'package-lock.json'
+
+      lint-workspace:
+        description: 'Workspace name to lint (e.g. "frontend")'
+        type: string
+        default: 'frontend'
+
+      build-command:
+        description: 'Build command'
+        type: string
+        default: 'npm run build'
+
+      dist-path:
+        description: 'Path to frontend build output (relative to working-directory)'
+        type: string
+        default: 'frontend/dist'
+
+      run-tests:
+        description: 'Run frontend unit / component tests'
+        type: boolean
+        default: false
+
+      test-command:
+        description: 'Test command (only used when run-tests is true)'
+        type: string
+        default: 'npm test --workspace=frontend'
+
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+          cache-dependency-path: ${{ inputs.cache-dependency-path }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Lint ─────────────────────────────────────────────────────
+      - name: Lint frontend
+        if: inputs.lint-workspace != ''
+        run: |
+          echo "::group::Lint ${{ inputs.lint-workspace }}"
+          npm run lint --workspace="${{ inputs.lint-workspace }}"
+          echo "::endgroup::"
+
+      # ── Build ────────────────────────────────────────────────────
+      - name: Build frontend
+        run: ${{ inputs.build-command }}
+
+      # ── Tests ────────────────────────────────────────────────────
+      - name: Run frontend tests
+        if: inputs.run-tests
+        run: ${{ inputs.test-command }}
+
+      # ── Upload Artifact ──────────────────────────────────────────
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-${{ inputs.product-code }}
+          path: ${{ inputs.working-directory }}/${{ inputs.dist-path }}/
+          retention-days: 7
