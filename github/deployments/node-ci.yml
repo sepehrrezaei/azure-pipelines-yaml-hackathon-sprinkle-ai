@@ -23,6 +23,11 @@ on:
         type: string
         default: 'unknown-product'
 
+      something-extra:
+        description: 'version or something extra to put in artifact name (optional)'
+        type: string
+        default: ''
+
       working-directory:
         description: 'Working directory for the monorepo root'
         type: string
@@ -143,7 +148,7 @@ jobs:
         if: inputs.upload-artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-dist-${{ inputs.product-code }}
+          name: frontend-dist-${{ inputs.product-code }}-${{ inputs.something-extra }}
           path: ${{ inputs.working-directory }}/${{ inputs.frontend-dist-path }}/
           retention-days: 7
 
@@ -151,6 +156,6 @@ jobs:
         if: inputs.upload-artifacts && inputs.backend-paths != ''
         uses: actions/upload-artifact@v4
         with:
-          name: backend-app-${{ inputs.product-code }}
+          name: backend-app-${{ inputs.product-code }}-${{ inputs.something-extra }}
           path: ${{ inputs.backend-paths }}
           retention-days: 7
