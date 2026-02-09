@@ -1,0 +1,32 @@
+# ---------------------------------------------------------------------------
+# STEP TEMPLATE: setup-node.yml
+# Lives in: template repo → azure-pipelines/templates/steps/setup-node.yml
+# Consumed via: template: steps/setup-node.yml@templates
+# ---------------------------------------------------------------------------
+
+parameters:
+  - name: nodeVersion
+    type: string
+    default: '20.x'
+
+  - name: workingDirectory
+    type: string
+    default: '.'
+
+steps:
+  - task: NodeTool@0
+    displayName: 'Install Node.js ${{ parameters.nodeVersion }}'
+    inputs:
+      versionSpec: '${{ parameters.nodeVersion }}'
+
+  - task: Cache@2
+    displayName: 'Cache npm packages'
+    inputs:
+      key: 'npm | "$(Agent.OS)" | ${{ parameters.workingDirectory }}/package-lock.json'
+      restoreKeys: |
+        npm | "$(Agent.OS)"
+      path: '$(Pipeline.Workspace)/.npm'
+
+  - script: npm ci
+    displayName: 'Install dependencies (npm ci)'
+    workingDirectory: '${{ parameters.workingDirectory }}'

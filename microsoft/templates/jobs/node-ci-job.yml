@@ -1,0 +1,123 @@
+# ---------------------------------------------------------------------------
+# JOB TEMPLATE: node-ci-job.yml
+# Lives in: template repo → azure-pipelines/templates/jobs/node-ci-job.yml
+# Consumed via: template: jobs/node-ci-job.yml@templates
+#
+# A full CI job that composes step templates. Projects only need to call
+# this one job template with their parameters — all steps are managed here.
+# ---------------------------------------------------------------------------
+
+parameters:
+  - name: nodeVersion
+    type: string
+    default: '20.x'
+
+  - name: workingDirectory
+    type: string
+    default: '.'
+
+  - name: vmImage
+    type: string
+    default: 'ubuntu-latest'
+
+  # -- Lint options --
+  - name: runLint
+    type: boolean
+    default: true
+
+  - name: lintWorkspaces
+    type: object
+    default: []
+
+  - name: continueOnLintError
+    type: boolean
+    default: false
+
+  # -- Build options --
+  - name: buildCommand
+    type: string
+    default: 'npm run build'
+
+  - name: distFolder
+    type: string
+    default: 'dist'
+
+  - name: frontendArtifactName
+    type: string
+    default: 'frontend-dist'
+
+  # -- API test options --
+  - name: runApiTests
+    type: boolean
+    default: false
+
+  - name: apiStartCommand
+    type: string
+    default: 'npm run start'
+
+  - name: apiPort
+    type: number
+    default: 3000
+
+  - name: apiEndpoints
+    type: object
+    default:
+      - '/health'
+
+  # -- Backend archive options --
+  - name: archiveBackend
+    type: boolean
+    default: false
+
+  - name: backendFolder
+    type: string
+    default: 'backend'
+
+  - name: backendArtifactName
+    type: string
+    default: 'backend-app'
+
+jobs:
+  - job: Build
+    displayName: 'Build & Test'
+    pool:
+      vmImage: '${{ parameters.vmImage }}'
+
+    steps:
+      # ── Setup ──────────────────────────────────────────────────
+      - template: ../steps/setup-node.yml
+        parameters:
+          nodeVersion: '${{ parameters.nodeVersion }}'
+          workingDirectory: '${{ parameters.workingDirectory }}'
+
+      # ── Lint ───────────────────────────────────────────────────
+      - ${{ if and(eq(parameters.runLint, true), gt(length(parameters.lintWorkspaces), 0)) }}:
+        - template: ../steps/lint.yml
+          parameters:
+            workingDirectory: '${{ parameters.workingDirectory }}'
+            workspaces: ${{ parameters.lintWorkspaces }}
+            continueOnError: ${{ parameters.continueOnLintError }}
+
+      # ── Build + Publish Frontend ───────────────────────────────
+      - template: ../steps/build-and-publish.yml
+        parameters:
+          workingDirectory: '${{ parameters.workingDirectory }}'
+          buildCommand: '${{ parameters.buildCommand }}'
+          distFolder: '${{ parameters.distFolder }}'
+          artifactName: '${{ parameters.frontendArtifactName }}'
+
+      # ── API Smoke Tests ────────────────────────────────────────
+      - ${{ if eq(parameters.runApiTests, true) }}:
+        - template: ../steps/test-api-endpoints.yml
+          parameters:
+            workingDirectory: '${{ parameters.workingDirectory }}'
+            startCommand: '${{ parameters.apiStartCommand }}'
+            port: ${{ parameters.apiPort }}
+            endpoints: ${{ parameters.apiEndpoints }}
+
+      # ── Archive Backend ────────────────────────────────────────
+      - ${{ if eq(parameters.archiveBackend, true) }}:
+        - template: ../steps/archive-and-publish.yml
+          parameters:
+            sourceFolder: '${{ parameters.workingDirectory }}/${{ parameters.backendFolder }}'
+            artifactName: '${{ parameters.backendArtifactName }}'

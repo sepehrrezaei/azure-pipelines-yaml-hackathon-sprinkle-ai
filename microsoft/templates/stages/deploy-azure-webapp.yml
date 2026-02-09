@@ -1,0 +1,158 @@
+# ---------------------------------------------------------------------------
+# STAGE TEMPLATE: deploy-azure-webapp.yml
+# Lives in: template repo → azure-pipelines/templates/stages/deploy-azure-webapp.yml
+# Consumed via: template: stages/deploy-azure-webapp.yml@templates
+#
+# Deploys artifacts to Azure App Service and/or Azure Static Web Apps.
+# Projects just pass their Azure resource names — deployment logic is
+# entirely owned by the template repo.
+# ---------------------------------------------------------------------------
+
+parameters:
+  - name: stageName
+    type: string
+    default: 'Deploy'
+
+  - name: displayName
+    type: string
+    default: 'Deploy to Azure'
+
+  - name: dependsOn
+    type: string
+    default: 'Build'
+
+  - name: environment
+    type: string
+    default: 'production'
+
+  - name: azureSubscription
+    type: string
+
+  - name: vmImage
+    type: string
+    default: 'ubuntu-latest'
+
+  # -- Backend deployment --
+  - name: deployBackend
+    type: boolean
+    default: true
+
+  - name: backendArtifactName
+    type: string
+    default: 'backend-app'
+
+  - name: webAppNameBackend
+    type: string
+    default: ''
+
+  - name: runtimeStack
+    type: string
+    default: 'NODE|20-lts'
+
+  - name: startupCommand
+    type: string
+    default: 'npm run start'
+
+  # -- Frontend deployment --
+  - name: deployFrontend
+    type: boolean
+    default: true
+
+  - name: frontendArtifactName
+    type: string
+    default: 'frontend-dist'
+
+  - name: frontendDeployTarget
+    type: string
+    default: 'static-web-app'
+    values:
+      - 'static-web-app'
+      - 'app-service'
+
+  - name: webAppNameFrontend
+    type: string
+    default: ''
+
+  - name: staticWebAppToken
+    type: string
+    default: ''
+
+stages:
+  - stage: ${{ parameters.stageName }}
+    displayName: '${{ parameters.displayName }}'
+    dependsOn: ${{ parameters.dependsOn }}
+    condition: succeeded()
+
+    jobs:
+      # ── Backend → Azure App Service ────────────────────────────
+      - ${{ if eq(parameters.deployBackend, true) }}:
+        - deployment: DeployBackend
+          displayName: 'Deploy Backend'
+          environment: '${{ parameters.environment }}'
+          pool:
+            vmImage: '${{ parameters.vmImage }}'
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - download: current
+                    artifact: '${{ parameters.backendArtifactName }}'
+
+                  - task: AzureWebApp@1
+                    displayName: 'Deploy → ${{ parameters.webAppNameBackend }}'
+                    inputs:
+                      azureSubscription: '${{ parameters.azureSubscription }}'
+                      appType: webAppLinux
+                      appName: '${{ parameters.webAppNameBackend }}'
+                      runtimeStack: '${{ parameters.runtimeStack }}'
+                      package: '$(Pipeline.Workspace)/${{ parameters.backendArtifactName }}/${{ parameters.backendArtifactName }}.zip'
+                      startUpCommand: '${{ parameters.startupCommand }}'
+
+      # ── Frontend → Azure Static Web App ────────────────────────
+      - ${{ if and(eq(parameters.deployFrontend, true), eq(parameters.frontendDeployTarget, 'static-web-app')) }}:
+        - deployment: DeployFrontend
+          displayName: 'Deploy Frontend (Static Web App)'
+          environment: '${{ parameters.environment }}'
+          pool:
+            vmImage: '${{ parameters.vmImage }}'
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - download: current
+                    artifact: '${{ parameters.frontendArtifactName }}'
+
+                  - task: ExtractFiles@1
+                    displayName: 'Extract frontend build'
+                    inputs:
+                      archiveFilePatterns: '$(Pipeline.Workspace)/${{ parameters.frontendArtifactName }}/${{ parameters.frontendArtifactName }}.zip'
+                      destinationFolder: '$(Pipeline.Workspace)/frontend-extracted'
+
+                  - task: AzureStaticWebApp@0
+                    displayName: 'Deploy → Static Web App'
+                    inputs:
+                      app_location: '$(Pipeline.Workspace)/frontend-extracted'
+                      skip_app_build: true
+                      azure_static_web_apps_api_token: '${{ parameters.staticWebAppToken }}'
+
+      # ── Frontend → Azure App Service (alternative) ─────────────
+      - ${{ if and(eq(parameters.deployFrontend, true), eq(parameters.frontendDeployTarget, 'app-service')) }}:
+        - deployment: DeployFrontend
+          displayName: 'Deploy Frontend (App Service)'
+          environment: '${{ parameters.environment }}'
+          pool:
+            vmImage: '${{ parameters.vmImage }}'
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - download: current
+                    artifact: '${{ parameters.frontendArtifactName }}'
+
+                  - task: AzureWebApp@1
+                    displayName: 'Deploy → ${{ parameters.webAppNameFrontend }}'
+                    inputs:
+                      azureSubscription: '${{ parameters.azureSubscription }}'
+                      appType: webAppLinux
+                      appName: '${{ parameters.webAppNameFrontend }}'
+                      package: '$(Pipeline.Workspace)/${{ parameters.frontendArtifactName }}/${{ parameters.frontendArtifactName }}.zip'

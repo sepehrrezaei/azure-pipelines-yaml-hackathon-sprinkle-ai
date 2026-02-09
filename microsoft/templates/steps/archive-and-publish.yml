@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# STEP TEMPLATE: archive-and-publish.yml
+# Lives in: template repo → azure-pipelines/templates/steps/archive-and-publish.yml
+# Consumed via: template: steps/archive-and-publish.yml@templates
+#
+# Generic step to copy, install prod deps, archive, and publish any folder.
+# ---------------------------------------------------------------------------
+
+parameters:
+  - name: sourceFolder
+    type: string
+
+  - name: artifactName
+    type: string
+
+  - name: contents
+    type: string
+    default: |
+      src/**
+      package.json
+      package-lock.json
+
+  - name: installProdDeps
+    type: boolean
+    default: true
+
+steps:
+  - task: CopyFiles@2
+    displayName: 'Prepare ${{ parameters.artifactName }} files'
+    inputs:
+      sourceFolder: '${{ parameters.sourceFolder }}'
+      contents: '${{ parameters.contents }}'
+      targetFolder: '$(Build.ArtifactStagingDirectory)/${{ parameters.artifactName }}'
+
+  - ${{ if eq(parameters.installProdDeps, true) }}:
+    - script: npm ci --omit=dev
+      displayName: 'Install production dependencies'
+      workingDirectory: '$(Build.ArtifactStagingDirectory)/${{ parameters.artifactName }}'
+
+  - task: ArchiveFiles@2
+    displayName: 'Archive ${{ parameters.artifactName }}'
+    inputs:
+      rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/${{ parameters.artifactName }}'
+      includeRootFolder: false
+      archiveType: zip
+      archiveFile: '$(Build.ArtifactStagingDirectory)/${{ parameters.artifactName }}.zip'
+      replaceExistingArchive: true
+
+  - publish: '$(Build.ArtifactStagingDirectory)/${{ parameters.artifactName }}.zip'
+    displayName: 'Publish ${{ parameters.artifactName }}'
+    artifact: '${{ parameters.artifactName }}'

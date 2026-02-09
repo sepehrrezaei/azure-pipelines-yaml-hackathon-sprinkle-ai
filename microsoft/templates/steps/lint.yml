@@ -1,0 +1,27 @@
+# ---------------------------------------------------------------------------
+# STEP TEMPLATE: lint.yml
+# Lives in: template repo → azure-pipelines/templates/steps/lint.yml
+# Consumed via: template: steps/lint.yml@templates
+# ---------------------------------------------------------------------------
+
+parameters:
+  - name: workingDirectory
+    type: string
+    default: '.'
+
+  - name: workspaces
+    type: object
+    default:
+      - backend
+      - frontend
+
+  - name: continueOnError
+    type: boolean
+    default: false
+
+steps:
+  - ${{ each workspace in parameters.workspaces }}:
+    - script: npm run lint --workspace=${{ workspace }}
+      displayName: 'Lint ${{ workspace }}'
+      workingDirectory: '${{ parameters.workingDirectory }}'
+      continueOnError: ${{ parameters.continueOnError }}

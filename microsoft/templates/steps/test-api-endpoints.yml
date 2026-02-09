@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# STEP TEMPLATE: test-api-endpoints.yml
+# Lives in: template repo → azure-pipelines/templates/steps/test-api-endpoints.yml
+# Consumed via: template: steps/test-api-endpoints.yml@templates
+# ---------------------------------------------------------------------------
+
+parameters:
+  - name: workingDirectory
+    type: string
+    default: '.'
+
+  - name: startCommand
+    type: string
+    default: 'npm run start --workspace=backend'
+
+  - name: port
+    type: number
+    default: 3000
+
+  - name: startupWaitSeconds
+    type: number
+    default: 5
+
+  - name: endpoints
+    type: object
+    default:
+      - '/health'
+
+steps:
+  - script: |
+      ${{ parameters.startCommand }} &
+      SERVER_PID=$!
+      sleep ${{ parameters.startupWaitSeconds }}
+
+      FAILED=0
+      ${{ each endpoint in parameters.endpoints }}:
+      echo "Testing http://localhost:${{ parameters.port }}${{ endpoint }} ..."
+      curl -sf http://localhost:${{ parameters.port }}${{ endpoint }} || FAILED=1
+      ${{ end }}
+
+      kill $SERVER_PID 2>/dev/null || true
+
+      if [ $FAILED -ne 0 ]; then
+        echo "##vso[task.logissue type=error]Endpoint smoke tests failed"
+        exit 1
+      fi
+      echo "All endpoints responding ✅"
+    displayName: 'Smoke-test API endpoints'
+    workingDirectory: '${{ parameters.workingDirectory }}'

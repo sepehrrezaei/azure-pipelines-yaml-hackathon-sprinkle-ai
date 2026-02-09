@@ -1,0 +1,40 @@
+# ---------------------------------------------------------------------------
+# STEP TEMPLATE: build-and-publish.yml
+# Lives in: template repo → azure-pipelines/templates/steps/build-and-publish.yml
+# Consumed via: template: steps/build-and-publish.yml@templates
+# ---------------------------------------------------------------------------
+
+parameters:
+  - name: workingDirectory
+    type: string
+    default: '.'
+
+  - name: buildCommand
+    type: string
+    default: 'npm run build'
+
+  - name: distFolder
+    type: string
+    default: 'frontend/dist'
+
+  - name: artifactName
+    type: string
+    default: 'frontend-dist'
+
+steps:
+  - script: ${{ parameters.buildCommand }}
+    displayName: 'Build'
+    workingDirectory: '${{ parameters.workingDirectory }}'
+
+  - task: ArchiveFiles@2
+    displayName: 'Archive build output'
+    inputs:
+      rootFolderOrFile: '${{ parameters.workingDirectory }}/${{ parameters.distFolder }}'
+      includeRootFolder: false
+      archiveType: zip
+      archiveFile: '$(Build.ArtifactStagingDirectory)/${{ parameters.artifactName }}.zip'
+      replaceExistingArchive: true
+
+  - publish: '$(Build.ArtifactStagingDirectory)/${{ parameters.artifactName }}.zip'
+    displayName: 'Publish ${{ parameters.artifactName }}'
+    artifact: '${{ parameters.artifactName }}'
