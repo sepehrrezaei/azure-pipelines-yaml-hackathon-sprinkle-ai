@@ -1,0 +1,115 @@
+# ---------------------------------------------------------------------------
+# REUSABLE WORKFLOW: deploy-azure-webapp.yml
+# Lives in: template repo → .github/workflows/deploy-azure-webapp.yml
+# Consumed via: uses: sepehrrezaei/azure-pipelines-yaml-hackathon-sprinkle-ai/.github/workflows/deploy-azure-webapp.yml@master
+#
+# Centralised deployment to Azure App Service + Static Web Apps.
+# Update this file once → all consuming repos get the change.
+# ---------------------------------------------------------------------------
+
+name: Deploy to Azure (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      # -- Backend --
+      deploy-backend:
+        description: 'Deploy backend to Azure App Service'
+        type: boolean
+        default: true
+
+      backend-artifact-name:
+        description: 'Name of the backend artifact from the build job'
+        type: string
+        default: 'backend-app'
+
+      azure-webapp-name-backend:
+        description: 'Azure App Service name for the backend'
+        type: string
+        required: true
+
+      startup-command:
+        description: 'App Service startup command'
+        type: string
+        default: 'npm run start'
+
+      # -- Frontend --
+      deploy-frontend:
+        description: 'Deploy frontend to Azure Static Web App'
+        type: boolean
+        default: true
+
+      frontend-artifact-name:
+        description: 'Name of the frontend artifact from the build job'
+        type: string
+        default: 'frontend-dist'
+
+      # -- Environment --
+      environment-name:
+        description: 'GitHub environment name for deployment'
+        type: string
+        default: 'Production'
+
+    secrets:
+      AZURE_WEBAPP_PUBLISH_PROFILE_BACKEND:
+        description: 'Publish profile for the backend App Service'
+        required: false
+
+      AZURE_STATIC_WEB_APPS_API_TOKEN:
+        description: 'Deployment token for Azure Static Web Apps'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Deploy Backend → Azure App Service ─────────────────────────
+  deploy-backend:
+    if: inputs.deploy-backend
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment-name }}
+      url: ${{ steps.deploy.outputs.webapp-url }}
+
+    steps:
+      - name: Download backend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.backend-artifact-name }}
+
+      - name: Deploy to Azure App Service
+        id: deploy
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ inputs.azure-webapp-name-backend }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_BACKEND }}
+          package: '.'
+          startup-command: ${{ inputs.startup-command }}
+
+  # ── Deploy Frontend → Azure Static Web App ─────────────────────
+  deploy-frontend:
+    if: inputs.deploy-frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    environment:
+      name: ${{ inputs.environment-name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.frontend-artifact-name }}
+          path: ./frontend-dist
+
+      - name: Deploy to Azure Static Web App
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: 'upload'
+          skip_app_build: true
+          app_location: './frontend-dist'

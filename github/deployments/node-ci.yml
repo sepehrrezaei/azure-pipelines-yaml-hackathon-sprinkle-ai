@@ -1,0 +1,151 @@
+# ---------------------------------------------------------------------------
+# REUSABLE WORKFLOW: node-ci.yml
+# Lives in: template repo → .github/workflows/node-ci.yml
+# Consumed via: uses: sepehrrezaei/azure-pipelines-yaml-hackathon-sprinkle-ai/.github/workflows/node-ci.yml@master
+#
+# Centralised CI for Node.js monorepo apps. Consuming projects pass their
+# config as inputs — the build/lint/test logic lives here.
+# Update this file once → all consuming repos get the change.
+# ---------------------------------------------------------------------------
+
+name: Node.js CI (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version to use'
+        type: string
+        default: '20.x'
+
+      working-directory:
+        description: 'Working directory for the monorepo root'
+        type: string
+        default: '.'
+
+      cache-dependency-path:
+        description: 'Path to package-lock.json for caching'
+        type: string
+        default: 'package-lock.json'
+
+      run-lint:
+        description: 'Run lint step'
+        type: boolean
+        default: true
+
+      lint-workspaces:
+        description: 'Space-separated workspace names to lint (e.g. "backend frontend")'
+        type: string
+        default: ''
+
+      build-command:
+        description: 'Build command'
+        type: string
+        default: 'npm run build'
+
+      run-api-tests:
+        description: 'Run backend API smoke tests'
+        type: boolean
+        default: false
+
+      api-start-command:
+        description: 'Command to start the API server'
+        type: string
+        default: 'npm run start'
+
+      api-port:
+        description: 'Port the API server listens on'
+        type: string
+        default: '3000'
+
+      api-endpoints:
+        description: 'Space-separated endpoint paths to test (e.g. "/health /api/status")'
+        type: string
+        default: '/health'
+
+      upload-artifacts:
+        description: 'Upload build artifacts'
+        type: boolean
+        default: true
+
+      frontend-dist-path:
+        description: 'Path to frontend build output (relative to working-directory)'
+        type: string
+        default: 'frontend/dist'
+
+      backend-paths:
+        description: 'Newline-separated paths to include in backend artifact'
+        type: string
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+          cache-dependency-path: ${{ inputs.cache-dependency-path }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Lint ─────────────────────────────────────────────────────
+      - name: Lint workspaces
+        if: inputs.run-lint && inputs.lint-workspaces != ''
+        run: |
+          for ws in ${{ inputs.lint-workspaces }}; do
+            echo "::group::Lint $ws"
+            npm run lint --workspace="$ws"
+            echo "::endgroup::"
+          done
+
+      # ── Build ────────────────────────────────────────────────────
+      - name: Build
+        run: ${{ inputs.build-command }}
+
+      # ── API Smoke Tests ──────────────────────────────────────────
+      - name: Smoke-test API endpoints
+        if: inputs.run-api-tests
+        run: |
+          ${{ inputs.api-start-command }} &
+          SERVER_PID=$!
+          sleep 3
+          FAILED=0
+          for ep in ${{ inputs.api-endpoints }}; do
+            echo "Testing http://localhost:${{ inputs.api-port }}${ep} ..."
+            curl -sf "http://localhost:${{ inputs.api-port }}${ep}" || FAILED=1
+          done
+          kill $SERVER_PID 2>/dev/null || true
+          if [ $FAILED -ne 0 ]; then
+            echo "::error::Endpoint smoke tests failed"
+            exit 1
+          fi
+          echo "✅ All endpoints responding"
+
+      # ── Upload Artifacts ─────────────────────────────────────────
+      - name: Upload frontend artifact
+        if: inputs.upload-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: ${{ inputs.working-directory }}/${{ inputs.frontend-dist-path }}/
+          retention-days: 7
+
+      - name: Upload backend artifact
+        if: inputs.upload-artifacts && inputs.backend-paths != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-app
+          path: ${{ inputs.backend-paths }}
+          retention-days: 7
